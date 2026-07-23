@@ -176,7 +176,11 @@ class MyAccessibilityService : AccessibilityService() {
 
     /**
      * 执行单个签到任务。
-     * 流程：检查安装 → 拉起 App → 等待加载 → 关闭弹窗 → 查找按钮 → 去重 → 点击。
+     * 完整流程：
+     *   检查安装 → 拉起 App → 等待加载 → 关弹窗
+     *   → 【导航 tab】(若有 preClickTabs) → 关弹窗 → 去重判断
+     *   → 【点入口卡片】(若有 entryKeywords) → 等待 → 关弹窗 → 再次去重
+     *   → 查找签到按钮 → 【滚动查找】(若 needsScroll 且未找到) → 去重 → 点击 → 验证
      */
     private suspend fun performSingleTask(task: CheckinTask): TaskResult {
         // 1. 选择已安装的目标包
@@ -205,42 +209,81 @@ class MyAccessibilityService : AccessibilityService() {
         }
         // 给 H5 / 动画额外渲染时间
         delay(task.extraStableDelayMs)
-
-        // 4. 关闭可能出现的弹窗
         dismissPopupsIfNeeded()
 
-        // 5. 在窗口中查找签到按钮
-        var root = rootInActiveWindowSafe()
-        if (root == null) {
-            Logger.error("${task.name}：无法获取窗口节点，跳过。")
-            backToHomeSafe()
-            return TaskResult.FAILED
+        // 4. 【导航 tab】切换到签到入口所在页面（如"我的"/"会员中心"）
+        if (task.preClickTabs.isNotEmpty()) {
+            navigateToTab(task)
+            delay(1000L)
+            dismissPopupsIfNeeded()
         }
 
-        // 5.1 先做去重判断：若窗口中已存在完成态关键词，直接跳过
-        if (containsAnyKeyword(root, task.skipKeywords)) {
+        // 5. 首次去重判断
+        var root = rootInActiveWindowSafe()
+        if (root != null && containsAnyKeyword(root, task.skipKeywords)) {
             Logger.success("${task.name}：检测到已完成（已签到/已领取），跳过。")
             backToHomeSafe()
             return TaskResult.SKIPPED
         }
 
-        // 6. 定位签到按钮
-        var button = findCheckinNode(root, task)
-        // 第一轮没找到，再轮询等待 4 秒（H5 异步加载）
+        // 6. 【点击入口卡片】如"每日签到"卡片，点进去才是签到页
+        if (task.entryKeywords.isNotEmpty()) {
+            val entered = clickEntryCard(task)
+            if (entered) {
+                delay(1500L)              // 等待签到页加载
+                dismissPopupsIfNeeded()
+                // 入口卡片可能本身就是签到入口，点击后再次去重
+                root = rootInActiveWindowSafe()
+                if (root != null && containsAnyKeyword(root, task.skipKeywords)) {
+                    Logger.success("${task.name}：入口点击后检测到已完成，跳过。")
+                    backToHomeSafe()
+                    return TaskResult.SKIPPED
+                }
+            } else {
+                Logger.info("${task.name}：未找到签到入口卡片，尝试直接查找签到按钮…")
+            }
+        }
+
+        // 7. 查找签到按钮（含短轮询等待 H5 渲染）
+        var button = findCheckinNodeSafe(task)
         if (button == null) {
             Logger.info("${task.name}：未立即找到签到按钮，继续等待页面渲染…")
             val deadline = System.currentTimeMillis() + 4000L
             while (System.currentTimeMillis() < deadline && isRunning) {
                 delay(500L)
                 dismissPopupsIfNeeded()
-                root = rootInActiveWindowSafe() ?: continue
-                if (containsAnyKeyword(root, task.skipKeywords)) {
-                    Logger.success("${task.name}：检测到已完成，跳过。")
+                val r = rootInActiveWindowSafe()
+                if (r != null) {
+                    if (containsAnyKeyword(r, task.skipKeywords)) {
+                        Logger.success("${task.name}：检测到已完成，跳过。")
+                        backToHomeSafe()
+                        return TaskResult.SKIPPED
+                    }
+                    button = findCheckinNode(r, task)
+                    if (button != null) break
+                }
+            }
+        }
+
+        // 8. 【滚动查找】签到按钮可能在页面下方，需下滑
+        if (button == null && task.needsScroll) {
+            Logger.info("${task.name}：当前屏未找到，开始下滑查找…")
+            for (scrollIdx in 1..3) {
+                if (!isRunning) break
+                scrollDown()
+                delay(800L)
+                dismissPopupsIfNeeded()
+                val r = rootInActiveWindowSafe() ?: continue
+                if (containsAnyKeyword(r, task.skipKeywords)) {
+                    Logger.success("${task.name}：滚动后检测到已完成，跳过。")
                     backToHomeSafe()
                     return TaskResult.SKIPPED
                 }
-                button = findCheckinNode(root, task)
-                if (button != null) break
+                button = findCheckinNode(r, task)
+                if (button != null) {
+                    Logger.info("${task.name}：第 $scrollIdx 次滚动后找到签到按钮。")
+                    break
+                }
             }
         }
 
@@ -250,7 +293,7 @@ class MyAccessibilityService : AccessibilityService() {
             return TaskResult.FAILED
         }
 
-        // 7. 点击前再次确认按钮非完成态
+        // 9. 点击前再次确认按钮非完成态
         val btnText = nodeText(button)
         if (task.skipKeywords.any { btnText.contains(it) }) {
             Logger.success("${task.name}：按钮已为「$btnText」，跳过。")
@@ -258,12 +301,12 @@ class MyAccessibilityService : AccessibilityService() {
             return TaskResult.SKIPPED
         }
 
-        // 8. 执行点击
+        // 10. 执行点击
         Logger.info("${task.name}：定位到签到按钮「${btnText.ifEmpty { "签到" }}」，模拟点击…")
         val clicked = performClick(button)
         delay(CLICK_STABLE_DELAY)
 
-        // 9. 点击后关闭弹窗 & 验证结果
+        // 11. 点击后关闭弹窗 & 验证结果
         dismissPopupsIfNeeded()
         val verified = verifyAfterClick(task)
 
@@ -277,6 +320,112 @@ class MyAccessibilityService : AccessibilityService() {
 
         backToHomeSafe()
         return if (clicked) TaskResult.SUCCESS else TaskResult.FAILED
+    }
+
+    /** 获取根节点并查找签到按钮的便捷封装。 */
+    private fun findCheckinNodeSafe(task: CheckinTask): AccessibilityNodeInfo? {
+        val root = rootInActiveWindowSafe() ?: return null
+        return findCheckinNode(root, task)
+    }
+
+    /**
+     * 【导航 tab】点击底部 tab（如"我的"/"会员中心"）。
+     * 按候选 tab 文字顺序尝试，命中第一个即点击并返回。
+     */
+    private suspend fun navigateToTab(task: CheckinTask) {
+        for (tabText in task.preClickTabs) {
+            if (!isRunning) return
+            val root = rootInActiveWindowSafe() ?: continue
+            val tabNode = findTextNodeExact(root, tabText)
+            if (tabNode != null) {
+                val target = if (tabNode.isClickable) tabNode else findClickableAncestor(tabNode)
+                if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    Logger.info("${task.name}：已切换到「$tabText」tab。")
+                    delay(1200L)
+                    return
+                }
+            }
+        }
+        Logger.warn("${task.name}：未找到底部 tab（${task.preClickTabs.joinToString("/")}），使用当前页。")
+    }
+
+    /**
+     * 【点击入口卡片】点击"每日签到"/"签到有礼"等入口卡片，
+     * 进入真正的签到页面。
+     * @return true 表示成功点击了入口卡片
+     */
+    private suspend fun clickEntryCard(task: CheckinTask): Boolean {
+        for (keyword in task.entryKeywords) {
+            if (!isRunning) return false
+            val root = rootInActiveWindowSafe() ?: continue
+            // 先尝试精确匹配，再尝试包含匹配
+            val node = findTextNodeExact(root, keyword) ?: findTextNodeContains(root, keyword)
+            if (node != null) {
+                // 入口卡片若本身不可点击，向上找可点击祖先
+                val target = if (node.isClickable) node else findClickableAncestor(node)
+                if (target != null) {
+                    Logger.info("${task.name}：点击签到入口「$keyword」…")
+                    if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                        return true
+                    }
+                    // ACTION_CLICK 失败则手势兜底
+                    val rect = android.graphics.Rect()
+                    target.getBoundsInScreen(rect)
+                    if (gestureClick(rect.exactCenterX(), rect.exactCenterY())) return true
+                }
+            }
+        }
+        return false
+    }
+
+    /** 向下滑动一屏（用于查找下方签到入口）。 */
+    private fun scrollDown() {
+        try {
+            val displayMetrics = resources.displayMetrics
+            val w = displayMetrics.widthPixels.toFloat()
+            val h = displayMetrics.heightPixels.toFloat()
+            val path = android.graphics.Path().apply {
+                moveTo(w / 2f, h * 0.7f)
+                lineTo(w / 2f, h * 0.3f)
+            }
+            val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(
+                path, 0, 400
+            )
+            val gesture = android.accessibilityservice.GestureDescription.Builder()
+                .addStroke(stroke)
+                .build()
+            dispatchGesture(gesture, null, null)
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** 递归查找 text 完全等于 [text] 的节点。 */
+    private fun findTextNodeExact(
+        node: AccessibilityNodeInfo,
+        text: String
+    ): AccessibilityNodeInfo? {
+        if (node.text?.toString()?.trim() == text) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val r = findTextNodeExact(child, text)
+            if (r != null) return r
+        }
+        return null
+    }
+
+    /** 递归查找 text 包含 [text] 的节点。 */
+    private fun findTextNodeContains(
+        node: AccessibilityNodeInfo,
+        text: String
+    ): AccessibilityNodeInfo? {
+        val t = node.text?.toString().orEmpty()
+        if (t.isNotEmpty() && t.contains(text)) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val r = findTextNodeContains(child, text)
+            if (r != null) return r
+        }
+        return null
     }
 
     // ------------------------------------------------------------------
