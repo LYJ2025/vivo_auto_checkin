@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">vivo 自动签到</string>
+    <string name="accessibility_service_label">vivo 自动签到服务</string>
+    <string name="accessibility_service_desc">用于自动完成 vivo 钱包、游戏中心、应用商店、官网登录 4 个签到任务。需要监听窗口内容并模拟点击。</string>
+
+    <string name="btn_start">开始签到</string>
+    <string name="btn_stop">停止</string>
+    <string name="btn_open_accessibility">去开启无障碍服务</string>
+    <string name="status_prefix">完成进度</string>
+    <string name="log_default">[准备就绪] 请先开启无障碍服务，再点击「开始签到」。</string>
+    <string name="noti_title">vivo 自动签到运行中</string>
+    <string name="noti_text">前台保活中，点击返回应用</string>
+    <string name="noti_channel">保活服务通道</string>
+</resources>

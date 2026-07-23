@@ -1,0 +1,10 @@
+# 构建产物
+build/
+.gradle/
+local.properties
+*.iml
+.idea/
+captures/
+.cxx/
+
+# 不上传到 GitHub：local.properties 含本机 SDK 路径
