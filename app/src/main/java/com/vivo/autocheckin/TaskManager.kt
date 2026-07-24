@@ -30,7 +30,9 @@ data class CheckinTask(
     val preClickTabs: List<String> = emptyList(),
     val entryKeywords: List<String> = emptyList(),
     val needsScroll: Boolean = true,
-    val extraStableDelayMs: Long = 1500L
+    val extraStableDelayMs: Long = 1500L,
+    /** 当所有候选包名都启动失败时，尝试用浏览器打开此 URL（如 vivo 官网）。 */
+    val fallbackUrl: String? = null
 )
 
 object TaskManager {
@@ -48,7 +50,7 @@ object TaskManager {
 
     /** 4 个任务按顺序执行。 */
     val tasks: List<CheckinTask> = listOf(
-        // 任务 A：vivo 钱包签到（已验证正常，保持原逻辑）
+        // 任务 A：vivo 钱包签到（已验证：主页直接可见，无需切 tab）
         CheckinTask(
             name = "钱包签到",
             packages = listOf("com.vivo.wallet"),
@@ -60,10 +62,11 @@ object TaskManager {
             textKeywords = listOf("签到", "立即签到", "领取", "打卡"),
             descKeywords = listOf("签到", "领取"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
-            preClickTabs = listOf("我的", "福利", "会员"),  // 钱包签到入口多在"我的"或"福利"tab
+            preClickTabs = emptyList(),      // 主页直接可见，不切 tab
+            entryKeywords = emptyList(),
             needsScroll = false
         ),
-        // 任务 B：游戏中心签到（已验证正常，保持原逻辑）
+        // 任务 B：游戏中心签到（已验证：主页直接可见，无需切 tab）
         CheckinTask(
             name = "游戏中心签到",
             packages = listOf("com.vivo.game"),
@@ -75,13 +78,18 @@ object TaskManager {
             textKeywords = listOf("签到", "立即签到", "领取", "打卡"),
             descKeywords = listOf("签到", "领取"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
-            preClickTabs = listOf("我的", "福利"),
+            preClickTabs = emptyList(),      // 主页直接可见，不切 tab
+            entryKeywords = emptyList(),
             needsScroll = false
         ),
-        // 任务 C：应用商店签到 —— 签到入口在"我的"tab 下的"每日签到"卡片
+        // 任务 C：应用商店签到 —— 候选包名覆盖 vivo/iQOO 多种机型
         CheckinTask(
             name = "应用商店签到",
-            packages = listOf("com.vivo.appstore"),
+            packages = listOf(
+                "com.vivo.appstore",
+                "com.iqoo.appstore",
+                "com.bbk.appstore"
+            ),
             viewIds = listOf(
                 "com.vivo.appstore:id/sign_btn",
                 "com.vivo.appstore:id/tv_sign",
@@ -91,26 +99,31 @@ object TaskManager {
             textKeywords = listOf("签到", "立即签到", "领取", "打卡", "做任务"),
             descKeywords = listOf("签到", "领取"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
-            preClickTabs = listOf("我的", "我的福利"),  // 应用商店签到入口在"我的"tab
-            entryKeywords = listOf("每日签到", "签到有礼", "签到领积分", "去签到"),  // 先点入口卡片
+            preClickTabs = listOf("我的", "我的福利"),
+            entryKeywords = listOf("每日签到", "签到有礼", "签到领积分", "去签到"),
             needsScroll = true
         ),
-        // 任务 D：vivo 官网 / 账号签到 —— 签到入口在"我的"或"会员中心"tab
+        // 任务 D：vivo 官网 / 账号签到
+        //  - com.bbk.account 无 launcher Activity，改用 com.vivo.website 优先
+        //  - 增加 vivo.cn 网页兜底（启动浏览器打开官网签到页）
         CheckinTask(
             name = "官网登录签到",
-            packages = listOf("com.bbk.account", "com.vivo.website"),
+            packages = listOf(
+                "com.vivo.website",
+                "com.vivo.browser",                 // vivo 浏览器打开 vivo.cn
+                "com.android.browser"               // 系统浏览器兜底
+            ),
             viewIds = listOf(
-                "com.bbk.account:id/sign_btn",
                 "com.vivo.website:id/sign_btn",
-                "com.bbk.account:id/tv_sign",
                 "com.vivo.website:id/tv_sign"
             ),
-            textKeywords = listOf("签到", "登录签到", "立即签到", "领取", "打卡", "做任务"),
+            textKeywords = listOf("签到", "登录签到", "立即签到", "领取", "打卡", "做任务", "登录"),
             descKeywords = listOf("签到", "领取"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
             preClickTabs = listOf("我的", "会员中心", "会员", "个人中心"),
             entryKeywords = listOf("每日签到", "签到有礼", "签到领积分", "去签到", "签到领会员"),
-            needsScroll = true
+            needsScroll = true,
+            fallbackUrl = "https://www.vivo.com.cn/"   // 包名启动失败时打开此 URL
         )
     )
 }

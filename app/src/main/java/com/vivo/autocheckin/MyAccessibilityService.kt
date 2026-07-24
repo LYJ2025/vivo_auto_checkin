@@ -191,16 +191,24 @@ class MyAccessibilityService : AccessibilityService() {
         }
         Logger.info("${task.name}：目标包名 $targetPkg，正在打开…")
 
-        // 2. 拉起目标 App 主界面
-        val launched = launchApp(targetPkg)
+        // 2. 拉起目标 App 主界面；若所有候选包名都启动失败，尝试 fallbackUrl
+        var launched = launchApp(targetPkg)
+        var isBrowserFallback = false
+        if (!launched && task.fallbackUrl != null) {
+            Logger.info("${task.name}：包名启动失败，尝试用浏览器打开 ${task.fallbackUrl}")
+            launched = launchUrl(task.fallbackUrl)
+            isBrowserFallback = launched
+        }
         if (!launched) {
             Logger.error("${task.name}：无法启动 App，跳过。")
             return TaskResult.FAILED
         }
 
         // 3. 等待目标 App 前台加载（带超时）
+        //   浏览器兜底场景下不强求包名匹配，只要任意非自机包名进入前台即可
         val loaded = withTimeoutOrNull(PAGE_TIMEOUT_MS) {
-            waitUntilForeground(targetPkg)
+            if (isBrowserFallback) waitUntilAnyForeground(targetPkg)
+            else waitUntilForeground(targetPkg)
         }
         if (loaded == null || !isRunning) {
             Logger.error("${task.name}：页面加载超时（>${PAGE_TIMEOUT_MS}ms），跳过本任务。")
@@ -464,12 +472,39 @@ class MyAccessibilityService : AccessibilityService() {
         }
     }
 
+    /** 用 ACTION_VIEW 打开 URL，由系统选择浏览器。 */
+    private fun launchUrl(url: String): Boolean {
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            true
+        } catch (t: Throwable) {
+            Logger.error("打开 URL $url 失败：${t.message}")
+            false
+        }
+    }
+
     /** 轮询直到目标包进入前台，超时由调用方 withTimeoutOrNull 控制。 */
     private suspend fun waitUntilForeground(targetPkg: String) {
         while (isRunning) {
             val root = rootInActiveWindowSafe()
             val pkg = root?.packageName ?: lastEventPackage
             if (pkg == targetPkg) return
+            delay(300L)
+        }
+    }
+
+    /**
+     * 浏览器兜底场景使用：等待任意非自机包名进入前台。
+     * 只要前台包名不再是本应用自己（com.vivo.autocheckin），就视为浏览器已打开。
+     */
+    private suspend fun waitUntilAnyForeground(selfPkg: String) {
+        val self = "com.vivo.autocheckin"
+        while (isRunning) {
+            val root = rootInActiveWindowSafe()
+            val pkg = (root?.packageName ?: lastEventPackage)?.toString().orEmpty()
+            if (pkg != self && pkg.isNotEmpty()) return
             delay(300L)
         }
     }
