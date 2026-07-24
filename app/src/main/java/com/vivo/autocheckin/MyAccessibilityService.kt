@@ -384,7 +384,11 @@ class MyAccessibilityService : AccessibilityService() {
             val screenH = dm.heightPixels
 
             // 广告类关键词：命中则大幅扣分
-            val adWords = listOf("新人", "享", "借", "领券", "福利", "立减", "折扣", "元", "￥")
+            val adWords = listOf(
+                "新人", "享", "借", "领券", "福利", "立减", "折扣", "元", "￥",
+                "商城", "兑换", "过期", "快来", "领取~", "马上", "立即抢", "低价",
+                "满减", "专享", "省", "赚", "送", "免费"
+            )
 
             // 按优先级评分排序
             val scored = candidates.map { node ->
@@ -411,6 +415,16 @@ class MyAccessibilityService : AccessibilityService() {
                 val textLen = txt.length
                 if (textLen in 1..6) score += 300
                 else if (textLen > 10) score -= 2000  // 长文本大概率是广告
+
+                // 严格排除：文本含"积分"但后面跟其他字（如"积分商城"/"积分明细"）
+                // 真正的胶囊应该是"积分"或"我的积分"或"数字+积分"
+                if (txt.contains("积分")) {
+                    val after = txt.substringAfter("积分")
+                    if (after.isNotEmpty() && after != " ") {
+                        // "积分商城"/"积分明细"等 → 大幅扣分
+                        score -= 4000
+                    }
+                }
 
                 // 广告词扣分
                 if (adWords.any { txt.contains(it) }) score -= 3000
