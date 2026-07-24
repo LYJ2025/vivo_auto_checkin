@@ -90,7 +90,8 @@ object TaskManager {
             fallbackUrl = "https://www.vivo.com.cn/"
         ),
         // 任务 3：应用商店签到
-        //  签到入口：主页右上角「积分」胶囊
+        //  流程：先点「我的」tab → 再点右上角积分胶囊 → 找签到按钮
+        //  （与游戏中心同款修复：应用商店主页无积分入口，需切到「我的」tab）
         CheckinTask(
             name = "应用商店签到",
             packages = listOf(
@@ -107,8 +108,8 @@ object TaskManager {
             textKeywords = listOf("签到", "立即签到", "领取", "打卡", "做任务", "已签"),
             descKeywords = listOf("签到", "领取", "积分"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
-            preClickTabs = emptyList(),
-            entryKeywords = listOf("我的积分", "积分"),
+            preClickTabs = listOf("我的"),            // 先切到「我的」tab
+            entryKeywords = listOf("我的积分", "积分"),  // 再点右上角积分胶囊
             needsScroll = true
         ),
         // 任务 4：vivo 钱包签到

@@ -1,6 +1,8 @@
 package com.vivo.autocheckin
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -11,6 +13,7 @@ import android.text.method.ScrollingMovementMethod
 import android.view.View
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -35,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnStart: View
     private lateinit var btnStop: View
     private lateinit var btnOpenAccessibility: View
+    private lateinit var btnCopyLog: View
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,6 +71,17 @@ class MainActivity : AppCompatActivity() {
         btnOpenAccessibility.setOnClickListener {
             openAccessibilitySettings()
         }
+
+        btnCopyLog.setOnClickListener {
+            val text = tvLog.text?.toString().orEmpty()
+            if (text.isBlank()) {
+                Toast.makeText(this, "日志为空", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("VivoAutoCheckin_Log", text))
+            Toast.makeText(this, "日志已复制到剪贴板", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onResume() {
@@ -83,6 +98,7 @@ class MainActivity : AppCompatActivity() {
         btnStart = findViewById(R.id.btnStart)
         btnStop = findViewById(R.id.btnStop)
         btnOpenAccessibility = findViewById(R.id.btnOpenAccessibility)
+        btnCopyLog = findViewById(R.id.btnCopyLog)
     }
 
     private fun setupLog() {

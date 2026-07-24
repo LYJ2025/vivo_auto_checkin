@@ -406,10 +406,21 @@ class MyAccessibilityService : AccessibilityService() {
                 val visible = cy in 0f..screenH.toFloat() && cx in 0f..screenW.toFloat()
                 if (visible) score += 800 else score -= 1500  // 不可见直接出局
 
-                // 右上角胶囊判定：y 在顶部 25% 且 x 在右侧 30%
-                if (visible && cy < screenH * 0.25f && cx > screenW * 0.7f) score += 700
-                // 顶部判定（不那么靠右也算）
-                else if (visible && cy < screenH * 0.2f) score += 400
+                // 【关键】位置判定：真正的积分胶囊位于屏幕顶部状态栏下方（顶部 15% 内）。
+                // 用户反馈钱包误点 y=823 的页面中部"积分"文字（实际是页面下方蓝框区域），
+                // 而真正的胶囊在屏幕顶部红框位置。因此对非顶部节点大幅扣分。
+                if (visible && cy < screenH * 0.15f) {
+                    // 顶部 15% 内：胶囊核心区，强加分
+                    score += 1500
+                    // 右上角再加成（x 在右侧 50%）
+                    if (cx > screenW * 0.5f) score += 500
+                } else if (visible && cy < screenH * 0.3f) {
+                    // 顶部 15%~30%：勉强算顶部，小幅加分
+                    score += 200
+                } else {
+                    // 顶部 30% 以下：明显不是顶部胶囊（页面中部内容），强制出局
+                    score -= 3000
+                }
 
                 // 文本短加分（胶囊通常 1~6 字，广告文案 10+ 字）
                 val textLen = txt.length
