@@ -8,7 +8,7 @@
 |------|------|----------|
 | 1 | 游戏中心签到 | `com.vivo.game` |
 | 2 | vivo 官网签到 | `com.vivo.space`|
-| 3 | 应用商店签到 | `com.bbk.appstore`（ |
+| 3 | 应用商店签到 | `com.bbk.appstore`|
 | 4 | 钱包签到 | `com.vivo.wallet` |
 
 ## 特性
