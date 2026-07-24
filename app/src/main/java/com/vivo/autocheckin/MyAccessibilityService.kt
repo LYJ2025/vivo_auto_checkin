@@ -358,32 +358,84 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 【点击入口卡片】点击"每日签到"/"签到有礼"等入口卡片，
-     * 进入真正的签到页面。
-     * @return true 表示成功点击了入口卡片
+     * 【点击入口卡片】点击右上角「积分」胶囊 / 积分文字，进入签到页面。
+     *
+     * 智能选择策略（避免误匹配"积分商城"等）：
+     * 1. 收集所有 text/desc 包含关键词的节点
+     * 2. 优先级：可点击 > bounds 在右上角 > 文本较短
+     * 3. 选中后点击（ACTION_CLICK → 手势兜底）
+     *
+     * @return true 表示成功点击了入口
      */
     private suspend fun clickEntryCard(task: CheckinTask): Boolean {
         for (keyword in task.entryKeywords) {
             if (!isRunning) return false
             val root = rootInActiveWindowSafe() ?: continue
-            // 先尝试精确匹配，再尝试包含匹配
-            val node = findTextNodeExact(root, keyword) ?: findTextNodeContains(root, keyword)
-            if (node != null) {
-                // 入口卡片若本身不可点击，向上找可点击祖先
-                val target = if (node.isClickable) node else findClickableAncestor(node)
+
+            // 收集所有匹配节点
+            val candidates = mutableListOf<AccessibilityNodeInfo>()
+            collectMatchingNodes(root, keyword, candidates)
+            if (candidates.isEmpty()) continue
+
+            // 屏幕尺寸（用于判断右上角）
+            val dm = resources.displayMetrics
+            val screenW = dm.widthPixels
+            val screenH = dm.heightPixels
+
+            // 按优先级排序：可点击优先 → 右上角优先 → 文本短优先
+            val best = candidates.maxByOrNull { node ->
+                val rect = android.graphics.Rect()
+                node.getBoundsInScreen(rect)
+                val clickable = if (findClickableTarget(node) != null) 1000 else 0
+                // 右上角判定：x 中心在右侧 40% 且 y 中心在上侧 35%
+                val inTopRight =
+                    if (rect.exactCenterX() > screenW * 0.4f && rect.exactCenterY() < screenH * 0.35f) 500 else 0
+                // 文本越短越可能是胶囊本身（而非"积分商城"等长文本）
+                val textLen = (node.text?.toString() ?: node.contentDescription?.toString() ?: "").length
+                val shortTextBonus = if (textLen in 1..6) 200 else 0
+                clickable + inTopRight + shortTextBonus
+            }
+
+            if (best != null) {
+                val target = findClickableTarget(best)
                 if (target != null) {
-                    Logger.info("${task.name}：点击签到入口「$keyword」…")
+                    val rect = android.graphics.Rect()
+                    target.getBoundsInScreen(rect)
+                    val txt = nodeText(best).ifEmpty { keyword }
+                    Logger.info("${task.name}：点击积分入口「$txt」(x=${rect.exactCenterX().toInt()},y=${rect.exactCenterY().toInt()})…")
                     if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                         return true
                     }
                     // ACTION_CLICK 失败则手势兜底
-                    val rect = android.graphics.Rect()
-                    target.getBoundsInScreen(rect)
                     if (gestureClick(rect.exactCenterX(), rect.exactCenterY())) return true
                 }
             }
         }
         return false
+    }
+
+    /** 收集所有 text 或 contentDescription 包含 [keyword] 的节点。 */
+    private fun collectMatchingNodes(
+        node: AccessibilityNodeInfo,
+        keyword: String,
+        out: MutableList<AccessibilityNodeInfo>
+    ) {
+        val text = node.text?.toString().orEmpty()
+        val desc = node.contentDescription?.toString().orEmpty()
+        if ((text.isNotEmpty() && text.contains(keyword)) ||
+            (desc.isNotEmpty() && desc.contains(keyword))
+        ) {
+            out.add(node)
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectMatchingNodes(child, keyword, out)
+        }
+    }
+
+    /** 获取节点的可点击目标：本身可点击则返回自己，否则返回最近可点击祖先。 */
+    private fun findClickableTarget(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        return if (node.isClickable) node else findClickableAncestor(node)
     }
 
     /** 向下滑动一屏（用于查找下方签到入口）。 */
