@@ -7,8 +7,8 @@
 | 顺序 | 任务 | 目标包名 |
 |------|------|----------|
 | 1 | 游戏中心签到 | `com.vivo.game` |
-| 2 | vivo 官网签到 | `com.vivo.space`（fallback: `com.vivo.website`，浏览器兜底: `https://www.vivo.com.cn/`） |
-| 3 | 应用商店签到 | `com.bbk.appstore`（fallback: `com.vivo.appstore`、`com.iqoo.appstore`） |
+| 2 | vivo 官网签到 | `com.vivo.space`|
+| 3 | 应用商店签到 | `com.bbk.appstore`（ |
 | 4 | 钱包签到 | `com.vivo.wallet` |
 
 ## 特性
