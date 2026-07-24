@@ -32,7 +32,9 @@ data class CheckinTask(
     val needsScroll: Boolean = true,
     val extraStableDelayMs: Long = 1500L,
     /** 当所有候选包名都启动失败时，尝试用浏览器打开此 URL（如 vivo 官网）。 */
-    val fallbackUrl: String? = null
+    val fallbackUrl: String? = null,
+    /** 节点文本命中这些词时排除（如「已签收」是订单状态，不是签到按钮）。 */
+    val excludeTextKeywords: List<String> = emptyList()
 )
 
 object TaskManager {
@@ -87,7 +89,8 @@ object TaskManager {
             preClickTabs = listOf("我的", "会员中心", "会员", "个人中心"),
             entryKeywords = listOf("我的积分", "积分"),
             needsScroll = true,
-            fallbackUrl = "https://www.vivo.com.cn/"
+            fallbackUrl = "https://www.vivo.com.cn/",
+            excludeTextKeywords = listOf("已签收")  // 排除订单状态文字
         ),
         // 任务 3：应用商店签到
         //  流程：先点「我的」tab → 再点右上角积分胶囊 → 找签到按钮

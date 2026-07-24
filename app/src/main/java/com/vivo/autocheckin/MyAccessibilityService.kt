@@ -221,6 +221,8 @@ class MyAccessibilityService : AccessibilityService() {
 
         // 4. 【导航 tab】切换到签到入口所在页面（如"我的"/"会员中心"）
         if (task.preClickTabs.isNotEmpty()) {
+            // 弹窗关闭后给页面一点时间渲染底部 tab
+            delay(800L)
             navigateToTab(task)
             delay(1000L)
             dismissPopupsIfNeeded()
@@ -341,37 +343,55 @@ class MyAccessibilityService : AccessibilityService() {
     /**
      * 【导航 tab】点击底部 tab（如"我的"/"会员中心"）。
      * 按候选 tab 文字顺序尝试，命中第一个即点击并返回。
+     *
+     * 【位置校验】底部 tab 必须位于屏幕底部 30% 区域内，
+     * 排除应用商店等场景下误中的顶部状态栏同名文字（如顶部标题"我的"）。
      */
     private suspend fun navigateToTab(task: CheckinTask) {
-        for (tabText in task.preClickTabs) {
-            if (!isRunning) return
-            val root = rootInActiveWindowSafe() ?: continue
-            val tabNode = findTextNodeExact(root, tabText)
-            if (tabNode != null) {
-                val target = if (tabNode.isClickable) tabNode else findClickableAncestor(tabNode)
-                if (target != null) {
-                    val rect = android.graphics.Rect()
-                    target.getBoundsInScreen(rect)
-                    val cx = rect.exactCenterX().toInt()
-                    val cy = rect.exactCenterY().toInt()
-                    Logger.info("${task.name}：定位到 tab「$tabText」(bounds=[$rect], x=$cx, y=$cy)，执行点击…")
-                    if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                        Logger.info("${task.name}：已点击 tab「$tabText」(x=$cx, y=$cy)，切换成功。")
-                        delay(1200L)
-                        return
-                    } else {
-                        Logger.warn("${task.name}：点击 tab「$tabText」ACTION_CLICK 失败，尝试手势兜底 (x=$cx, y=$cy)。")
-                        if (gestureClick(rect.exactCenterX(), rect.exactCenterY())) {
-                            Logger.info("${task.name}：手势点击 tab「$tabText」成功 (x=$cx, y=$cy)。")
+        val dm = resources.displayMetrics
+        val screenH = dm.heightPixels
+        // 最多重试 2 次，每次间隔 800ms（应对弹窗关闭后页面未稳定）
+        for (attempt in 1..2) {
+            for (tabText in task.preClickTabs) {
+                if (!isRunning) return
+                val root = rootInActiveWindowSafe() ?: continue
+                val tabNode = findTextNodeExact(root, tabText)
+                if (tabNode != null) {
+                    val target = if (tabNode.isClickable) tabNode else findClickableAncestor(tabNode)
+                    if (target != null) {
+                        val rect = android.graphics.Rect()
+                        target.getBoundsInScreen(rect)
+                        val cx = rect.exactCenterX().toInt()
+                        val cy = rect.exactCenterY().toInt()
+                        // 【关键】底部 tab 位置校验：必须在屏幕底部 35% 内
+                        if (cy < screenH * 0.65f) {
+                            Logger.warn("${task.name}：tab「$tabText」(x=$cx, y=$cy) 位于屏幕顶部 ${String.format("%.0f", cy * 100f / screenH)}%，非底部 tab，跳过。")
+                            continue
+                        }
+                        Logger.info("${task.name}：定位到 tab「$tabText」(bounds=[$rect], x=$cx, y=$cy)，执行点击…")
+                        if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                            Logger.info("${task.name}：已点击 tab「$tabText」(x=$cx, y=$cy)，切换成功。")
                             delay(1200L)
                             return
+                        } else {
+                            Logger.warn("${task.name}：点击 tab「$tabText」ACTION_CLICK 失败，尝试手势兜底 (x=$cx, y=$cy)。")
+                            if (gestureClick(rect.exactCenterX(), rect.exactCenterY())) {
+                                Logger.info("${task.name}：手势点击 tab「$tabText」成功 (x=$cx, y=$cy)。")
+                                delay(1200L)
+                                return
+                            }
                         }
+                    } else {
+                        Logger.warn("${task.name}：tab「$tabText」节点无可点击祖先。")
                     }
                 } else {
-                    Logger.warn("${task.name}：tab「$tabText」节点无可点击祖先。")
+                    Logger.info("${task.name}：当前页未找到 tab「$tabText」(尝试 $attempt/2)。")
                 }
-            } else {
-                Logger.info("${task.name}：当前页未找到 tab「$tabText」。")
+            }
+            // 第一轮没找到，等一下再试
+            if (attempt == 1) {
+                Logger.info("${task.name}：第一轮未找到可用底部 tab，800ms 后重试…")
+                delay(800L)
             }
         }
         Logger.warn("${task.name}：未找到底部 tab（${task.preClickTabs.joinToString("/")}），使用当前页。")
@@ -426,19 +446,20 @@ class MyAccessibilityService : AccessibilityService() {
                 val visible = cy in 0f..screenH.toFloat() && cx in 0f..screenW.toFloat()
                 if (visible) score += 800 else score -= 1500  // 不可见直接出局
 
-                // 【关键】位置判定：真正的积分胶囊位于屏幕顶部状态栏下方（顶部 15% 内）。
-                // 用户反馈钱包误点 y=823 的页面中部"积分"文字（实际是页面下方蓝框区域），
-                // 而真正的胶囊在屏幕顶部红框位置。因此对非顶部节点大幅扣分。
+                // 【关键】位置判定：真正的积分胶囊位于屏幕顶部状态栏下方（顶部 40% 内）。
+                // 实测：钱包胶囊 y≈329（11.9%），官网胶囊 y≈853（30.8%）。
+                // 钱包误点的广告在 y=3220（页面下方滚动区），需排除。
                 if (visible && cy < screenH * 0.15f) {
                     // 顶部 15% 内：胶囊核心区，强加分
                     score += 1500
                     // 右上角再加成（x 在右侧 50%）
                     if (cx > screenW * 0.5f) score += 500
-                } else if (visible && cy < screenH * 0.3f) {
-                    // 顶部 15%~30%：勉强算顶部，小幅加分
-                    score += 200
+                } else if (visible && cy < screenH * 0.4f) {
+                    // 顶部 15%~40%：官网等积分胶囊位置，中幅加分
+                    score += 600
+                    if (cx > screenW * 0.5f) score += 200
                 } else {
-                    // 顶部 30% 以下：明显不是顶部胶囊（页面中部内容），强制出局
+                    // 顶部 40% 以下：明显不是顶部胶囊（页面中部内容），强制出局
                     score -= 3000
                 }
 
@@ -673,17 +694,23 @@ class MyAccessibilityService : AccessibilityService() {
     /**
      * 定位签到节点。优先级：viewId → text → contentDescription。
      * 命中去重关键词的节点会被排除。
+     * 【可见性校验】节点中心坐标必须在屏幕内（0 ≤ x ≤ screenW, 0 ≤ y ≤ screenH），
+     * 避免点到屏幕外不可见的节点（如应用商店 y=-150 的情况）。
      */
     private fun findCheckinNode(
         root: AccessibilityNodeInfo,
         task: CheckinTask
     ): AccessibilityNodeInfo? {
+        val dm = resources.displayMetrics
+        val screenW = dm.widthPixels
+        val screenH = dm.heightPixels
+
         // 1. viewId 优先
         for (viewId in task.viewIds) {
             val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
             if (nodes != null) {
                 for (node in nodes) {
-                    if (isClickableLike(node) && !isSkipNode(node, task)) {
+                    if (isClickableLike(node) && !isSkipNode(node, task) && isNodeOnScreen(node, screenW, screenH)) {
                         return node
                     }
                 }
@@ -691,32 +718,50 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // 2. 文本匹配（深度遍历）
-        val textMatch = findByText(root, task.textKeywords, task)
+        val textMatch = findByText(root, task.textKeywords, task, screenW, screenH)
         if (textMatch != null) return textMatch
 
         // 3. contentDescription 匹配
-        val descMatch = findByDesc(root, task.descKeywords, task)
+        val descMatch = findByDesc(root, task.descKeywords, task, screenW, screenH)
         if (descMatch != null) return descMatch
 
         return null
+    }
+
+    /** 判断节点中心是否在屏幕可见区域内。 */
+    private fun isNodeOnScreen(node: AccessibilityNodeInfo, screenW: Int, screenH: Int): Boolean {
+        val rect = android.graphics.Rect()
+        node.getBoundsInScreen(rect)
+        val cx = rect.exactCenterX()
+        val cy = rect.exactCenterY()
+        val onScreen = cx in 0f..screenW.toFloat() && cy in 0f..screenH.toFloat()
+        if (!onScreen) {
+            val txt = nodeText(node)
+            Logger.warn("过滤：节点「$txt」(x=${cx.toInt()}, y=${cy.toInt()}) 不在屏幕内，跳过。")
+        }
+        return onScreen
     }
 
     /** 递归查找 text 命中关键词且可点击的节点。 */
     private fun findByText(
         node: AccessibilityNodeInfo,
         keywords: List<String>,
-        task: CheckinTask
+        task: CheckinTask,
+        screenW: Int,
+        screenH: Int
     ): AccessibilityNodeInfo? {
         val text = node.text?.toString().orEmpty()
-        if (text.isNotEmpty() && keywords.any { text.contains(it) } && !isSkipNode(node, task)) {
-            if (isClickableLike(node)) return node
+        if (text.isNotEmpty() && keywords.any { text.contains(it) } && !isSkipNode(node, task) &&
+            task.excludeTextKeywords.none { text.contains(it) }
+        ) {
+            if (isClickableLike(node) && isNodeOnScreen(node, screenW, screenH)) return node
             // 当前节点不可点击时，向上找最近的可点击祖先
             val clickableParent = findClickableAncestor(node)
-            if (clickableParent != null) return clickableParent
+            if (clickableParent != null && isNodeOnScreen(clickableParent, screenW, screenH)) return clickableParent
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val r = findByText(child, keywords, task)
+            val r = findByText(child, keywords, task, screenW, screenH)
             if (r != null) return r
         }
         return null
@@ -726,17 +771,19 @@ class MyAccessibilityService : AccessibilityService() {
     private fun findByDesc(
         node: AccessibilityNodeInfo,
         keywords: List<String>,
-        task: CheckinTask
+        task: CheckinTask,
+        screenW: Int,
+        screenH: Int
     ): AccessibilityNodeInfo? {
         val desc = node.contentDescription?.toString().orEmpty()
         if (desc.isNotEmpty() && keywords.any { desc.contains(it) } && !isSkipNode(node, task)) {
-            if (isClickableLike(node)) return node
+            if (isClickableLike(node) && isNodeOnScreen(node, screenW, screenH)) return node
             val clickableParent = findClickableAncestor(node)
-            if (clickableParent != null) return clickableParent
+            if (clickableParent != null && isNodeOnScreen(clickableParent, screenW, screenH)) return clickableParent
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val r = findByDesc(child, keywords, task)
+            val r = findByDesc(child, keywords, task, screenW, screenH)
             if (r != null) return r
         }
         return null
