@@ -725,8 +725,10 @@ class MyAccessibilityService : AccessibilityService() {
             val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
             if (nodes != null) {
                 for (node in nodes) {
-                    if (isClickableLike(node) && !isSkipNode(node, task) && isNodeOnScreen(node, screenW, screenH)) {
-                        return node
+                    // 优先返回真正可点击的节点；不可点击则找可点击祖先
+                    val target = if (node.isClickable) node else findClickableAncestor(node)
+                    if (target != null && !isSkipNode(node, task) && isNodeOnScreen(target, screenW, screenH)) {
+                        return target
                     }
                 }
             }
@@ -817,8 +819,9 @@ class MyAccessibilityService : AccessibilityService() {
         if (text.isNotEmpty() && keywords.any { text.contains(it) } && !isSkipNode(node, task) &&
             task.excludeTextKeywords.none { text.contains(it) }
         ) {
-            if (isClickableLike(node) && isNodeOnScreen(node, screenW, screenH)) return node
-            // 当前节点不可点击时，向上找最近的可点击祖先
+            // 优先返回真正 isClickable=true 的节点本身
+            if (node.isClickable && isNodeOnScreen(node, screenW, screenH)) return node
+            // 节点本身不可点击时，向上找最近的可点击祖先（如「已签1天」TextView 的容器）
             val clickableParent = findClickableAncestor(node)
             if (clickableParent != null && isNodeOnScreen(clickableParent, screenW, screenH)) return clickableParent
         }
@@ -840,7 +843,7 @@ class MyAccessibilityService : AccessibilityService() {
     ): AccessibilityNodeInfo? {
         val desc = node.contentDescription?.toString().orEmpty()
         if (desc.isNotEmpty() && keywords.any { desc.contains(it) } && !isSkipNode(node, task)) {
-            if (isClickableLike(node) && isNodeOnScreen(node, screenW, screenH)) return node
+            if (node.isClickable && isNodeOnScreen(node, screenW, screenH)) return node
             val clickableParent = findClickableAncestor(node)
             if (clickableParent != null && isNodeOnScreen(clickableParent, screenW, screenH)) return clickableParent
         }

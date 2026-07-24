@@ -93,8 +93,8 @@ object TaskManager {
             excludeTextKeywords = listOf("已签收")  // 排除订单状态文字
         ),
         // 任务 3：应用商店签到
-        //  流程：先点「我的」tab → 再点右上角积分胶囊 → 找签到按钮
-        //  （与游戏中心同款修复：应用商店主页无积分入口，需切到「我的」tab）
+        //  实测：切「我的」tab 后，页面顶部右上角直接是「已签1天」签到按钮，
+        //  没有积分胶囊入口。所以 preClickTabs 切 tab 后直接找签到按钮。
         CheckinTask(
             name = "应用商店签到",
             packages = listOf(
@@ -112,11 +112,11 @@ object TaskManager {
             descKeywords = listOf("签到", "领取", "积分"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
             preClickTabs = listOf("我的"),            // 先切到「我的」tab
-            entryKeywords = listOf("我的积分", "积分"),  // 再点右上角积分胶囊
-            needsScroll = true
+            entryKeywords = emptyList(),              // 无积分胶囊，直接找签到按钮
+            needsScroll = false
         ),
         // 任务 4：vivo 钱包签到
-        //  签到入口：主页右上角「积分」胶囊，点击后进入签到页
+        //  实测：钱包主页顶部右上角直接是「已签1天」签到按钮，无积分胶囊入口。
         CheckinTask(
             name = "钱包签到",
             packages = listOf("com.vivo.wallet"),
@@ -129,7 +129,7 @@ object TaskManager {
             descKeywords = listOf("签到", "领取", "积分"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
             preClickTabs = emptyList(),
-            entryKeywords = listOf("我的积分", "积分"),
+            entryKeywords = emptyList(),              // 无积分胶囊，直接找签到按钮
             needsScroll = false
         )
     )
