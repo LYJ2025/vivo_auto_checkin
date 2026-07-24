@@ -50,7 +50,8 @@ object TaskManager {
 
     /** 4 个任务按顺序执行（用户指定顺序：游戏中心 → vivo 官网 → 应用商店 → 钱包）。 */
     val tasks: List<CheckinTask> = listOf(
-        // 任务 1：游戏中心签到（主页"签到"按钮可直接点击；已签时变"已签n天"）
+        // 任务 1：游戏中心签到
+        //  流程：先点「我的」tab → 再点右上角积分胶囊 → 找签到按钮
         CheckinTask(
             name = "游戏中心签到",
             packages = listOf("com.vivo.game"),
@@ -62,9 +63,9 @@ object TaskManager {
             textKeywords = listOf("签到", "立即签到", "领取", "打卡", "已签"),
             descKeywords = listOf("签到", "领取", "积分"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
-            preClickTabs = emptyList(),
-            entryKeywords = emptyList(),
-            needsScroll = false
+            preClickTabs = listOf("我的"),            // 先切到「我的」tab
+            entryKeywords = listOf("我的积分", "积分"),  // 再点右上角积分胶囊
+            needsScroll = true
         ),
         // 任务 2：vivo 官网签到
         //  签到入口：「我的」tab 里的「积分」文字位置
