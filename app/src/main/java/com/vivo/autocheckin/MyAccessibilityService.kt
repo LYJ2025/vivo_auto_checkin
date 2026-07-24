@@ -310,7 +310,9 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // 10. 执行点击
-        Logger.info("${task.name}：定位到签到按钮「${btnText.ifEmpty { "签到" }}」，模拟点击…")
+        val btnRect = android.graphics.Rect()
+        button.getBoundsInScreen(btnRect)
+        Logger.info("${task.name}：定位到签到按钮「${btnText.ifEmpty { "签到" }}」(bounds=[$btnRect], x=${btnRect.exactCenterX().toInt()}, y=${btnRect.exactCenterY().toInt()})，模拟点击…")
         val clicked = performClick(button)
         delay(CLICK_STABLE_DELAY)
 
@@ -347,11 +349,29 @@ class MyAccessibilityService : AccessibilityService() {
             val tabNode = findTextNodeExact(root, tabText)
             if (tabNode != null) {
                 val target = if (tabNode.isClickable) tabNode else findClickableAncestor(tabNode)
-                if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                    Logger.info("${task.name}：已切换到「$tabText」tab。")
-                    delay(1200L)
-                    return
+                if (target != null) {
+                    val rect = android.graphics.Rect()
+                    target.getBoundsInScreen(rect)
+                    val cx = rect.exactCenterX().toInt()
+                    val cy = rect.exactCenterY().toInt()
+                    Logger.info("${task.name}：定位到 tab「$tabText」(bounds=[$rect], x=$cx, y=$cy)，执行点击…")
+                    if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                        Logger.info("${task.name}：已点击 tab「$tabText」(x=$cx, y=$cy)，切换成功。")
+                        delay(1200L)
+                        return
+                    } else {
+                        Logger.warn("${task.name}：点击 tab「$tabText」ACTION_CLICK 失败，尝试手势兜底 (x=$cx, y=$cy)。")
+                        if (gestureClick(rect.exactCenterX(), rect.exactCenterY())) {
+                            Logger.info("${task.name}：手势点击 tab「$tabText」成功 (x=$cx, y=$cy)。")
+                            delay(1200L)
+                            return
+                        }
+                    }
+                } else {
+                    Logger.warn("${task.name}：tab「$tabText」节点无可点击祖先。")
                 }
+            } else {
+                Logger.info("${task.name}：当前页未找到 tab「$tabText」。")
             }
         }
         Logger.warn("${task.name}：未找到底部 tab（${task.preClickTabs.joinToString("/")}），使用当前页。")
@@ -440,12 +460,22 @@ class MyAccessibilityService : AccessibilityService() {
                 // 广告词扣分
                 if (adWords.any { txt.contains(it) }) score -= 3000
 
+                // 【详细日志】打印每个候选节点的评分明细，便于定位误点原因
+                Logger.info("${task.name}：候选「$keyword」节点 [text=$txt, x=${cx.toInt()}, y=${cy.toInt()}, len=$textLen, visible=$visible, score=$score]")
+
                 Triple(node, score, txt)
             }.filter { it.second >= 200 }  // 低于 200 分直接放弃（避免硬选广告）
 
             if (scored.isEmpty()) {
-                Logger.info("${task.name}：找到「$keyword」节点但都不符合右上角胶囊特征，跳过入口点击。")
+                Logger.warn("${task.name}：找到「$keyword」节点 ${candidates.size} 个，但都不符合右上角胶囊特征，跳过入口点击。")
                 continue
+            }
+
+            // 打印所有通过筛选的候选（按分数降序）
+            scored.sortedByDescending { it.second }.forEachIndexed { idx, (n, s, t) ->
+                val r = android.graphics.Rect()
+                n.getBoundsInScreen(r)
+                Logger.info("${task.name}：候选排名 #${idx + 1} [text=$t, score=$s, x=${r.exactCenterX().toInt()}, y=${r.exactCenterY().toInt()}]")
             }
 
             val best = scored.maxBy { it.second }
@@ -456,11 +486,19 @@ class MyAccessibilityService : AccessibilityService() {
             if (target != null) {
                 val rect = android.graphics.Rect()
                 target.getBoundsInScreen(rect)
-                Logger.info("${task.name}：点击积分入口「$bestTxt」(score=$bestScore,x=${rect.exactCenterX().toInt()},y=${rect.exactCenterY().toInt()})…")
+                val cx = rect.exactCenterX().toInt()
+                val cy = rect.exactCenterY().toInt()
+                Logger.info("${task.name}：选中积分入口「$bestTxt」(score=$bestScore, x=$cx, y=$cy)，执行 ACTION_CLICK…")
                 if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    Logger.info("${task.name}：ACTION_CLICK 成功 (x=$cx, y=$cy)。")
                     return true
                 }
-                if (gestureClick(rect.exactCenterX(), rect.exactCenterY())) return true
+                Logger.warn("${task.name}：ACTION_CLICK 失败，回退手势点击 (x=$cx, y=$cy)。")
+                if (gestureClick(rect.exactCenterX(), rect.exactCenterY())) {
+                    Logger.info("${task.name}：手势点击成功 (x=$cx, y=$cy)。")
+                    return true
+                }
+                Logger.error("${task.name}：手势点击也失败 (x=$cx, y=$cy)。")
             }
         }
         return false
@@ -496,9 +534,13 @@ class MyAccessibilityService : AccessibilityService() {
             val displayMetrics = resources.displayMetrics
             val w = displayMetrics.widthPixels.toFloat()
             val h = displayMetrics.heightPixels.toFloat()
+            val startX = w / 2f
+            val startY = h * 0.7f
+            val endY = h * 0.3f
+            Logger.info("手势：下滑 (起 x=${startX.toInt()}, y=${startY.toInt()} → 终 x=${startX.toInt()}, y=${endY.toInt()})…")
             val path = android.graphics.Path().apply {
-                moveTo(w / 2f, h * 0.7f)
-                lineTo(w / 2f, h * 0.3f)
+                moveTo(startX, startY)
+                lineTo(startX, endY)
             }
             val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(
                 path, 0, 400
@@ -506,8 +548,10 @@ class MyAccessibilityService : AccessibilityService() {
             val gesture = android.accessibilityservice.GestureDescription.Builder()
                 .addStroke(stroke)
                 .build()
-            dispatchGesture(gesture, null, null)
-        } catch (_: Throwable) {
+            val ok = dispatchGesture(gesture, null, null)
+            Logger.info("手势：下滑 dispatchGesture 返回 $ok。")
+        } catch (t: Throwable) {
+            Logger.error("下滑失败：${t.message}")
         }
     }
 
@@ -727,29 +771,60 @@ class MyAccessibilityService : AccessibilityService() {
      * 全部失败时使用 dispatchGesture 点击节点中心坐标兜底。
      */
     private fun performClick(node: AccessibilityNodeInfo): Boolean {
+        val rect = android.graphics.Rect()
+        node.getBoundsInScreen(rect)
+        val cx = rect.exactCenterX().toInt()
+        val cy = rect.exactCenterY().toInt()
+        val txt = nodeText(node)
+
         // 1. 直接 ACTION_CLICK
-        if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            return true
+        if (node.isClickable) {
+            Logger.info("点击：节点「$txt」(x=$cx, y=$cy) isClickable=true，执行 ACTION_CLICK…")
+            if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                Logger.info("点击：ACTION_CLICK 成功 (x=$cx, y=$cy)。")
+                return true
+            }
+            Logger.warn("点击：ACTION_CLICK 失败 (x=$cx, y=$cy)。")
+        } else {
+            Logger.info("点击：节点「$txt」(x=$cx, y=$cy) isClickable=false，跳过直接点击。")
         }
         // 2. 点击可点击祖先
         val ancestor = findClickableAncestor(node)
-        if (ancestor != null && ancestor.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            return true
+        if (ancestor != null) {
+            val ar = android.graphics.Rect()
+            ancestor.getBoundsInScreen(ar)
+            val acx = ar.exactCenterX().toInt()
+            val acy = ar.exactCenterY().toInt()
+            Logger.info("点击：回退祖先节点 (x=$acx, y=$acy)，执行 ACTION_CLICK…")
+            if (ancestor.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                Logger.info("点击：祖先 ACTION_CLICK 成功 (x=$acx, y=$acy)。")
+                return true
+            }
+            Logger.warn("点击：祖先 ACTION_CLICK 失败 (x=$acx, y=$acy)。")
         }
         // 3. 父节点 ACTION_CLICK 兜底
         val parent = node.parent
-        if (parent != null && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            return true
+        if (parent != null) {
+            val pr = android.graphics.Rect()
+            parent.getBoundsInScreen(pr)
+            val pcx = pr.exactCenterX().toInt()
+            val pcy = pr.exactCenterY().toInt()
+            Logger.info("点击：回退父节点 (x=$pcx, y=$pcy)，执行 ACTION_CLICK…")
+            if (parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                Logger.info("点击：父节点 ACTION_CLICK 成功 (x=$pcx, y=$pcy)。")
+                return true
+            }
+            Logger.warn("点击：父节点 ACTION_CLICK 失败 (x=$pcx, y=$pcy)。")
         }
         // 4. dispatchGesture 坐标点击兜底
-        val rect = android.graphics.Rect()
-        node.getBoundsInScreen(rect)
+        Logger.info("点击：回退手势点击 (x=$cx, y=$cy)。")
         return gestureClick(rect.exactCenterX(), rect.exactCenterY())
     }
 
     /** 使用 dispatchGesture 在屏幕坐标执行点击。 */
     private fun gestureClick(x: Float, y: Float): Boolean {
         return try {
+            Logger.info("手势：dispatchGesture 点击 (x=${x.toInt()}, y=${y.toInt()})…")
             val path = android.graphics.Path().apply { moveTo(x, y) }
             val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(
                 path, 0, 60
@@ -757,9 +832,11 @@ class MyAccessibilityService : AccessibilityService() {
             val gesture = android.accessibilityservice.GestureDescription.Builder()
                 .addStroke(stroke)
                 .build()
-            dispatchGesture(gesture, null, null)
+            val ok = dispatchGesture(gesture, null, null)
+            Logger.info("手势：dispatchGesture 返回 $ok (x=${x.toInt()}, y=${y.toInt()})。")
+            ok
         } catch (t: Throwable) {
-            Logger.error("手势点击失败：${t.message}")
+            Logger.error("手势点击失败 (x=${x.toInt()}, y=${y.toInt()})：${t.message}")
             false
         }
     }
@@ -786,8 +863,12 @@ class MyAccessibilityService : AccessibilityService() {
                 if (isClickableLike(node) || findClickableAncestor(node) != null) {
                     val target = if (node.isClickable) node else findClickableAncestor(node)
                     if (target != null) {
+                        val rect = android.graphics.Rect()
+                        target.getBoundsInScreen(rect)
+                        val cx = rect.exactCenterX().toInt()
+                        val cy = rect.exactCenterY().toInt()
                         target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                        Logger.info("已关闭弹窗（命中「$keyword」）。")
+                        Logger.info("已关闭弹窗（命中「$keyword」, x=$cx, y=$cy）。")
                         return
                     }
                 }
@@ -844,10 +925,13 @@ class MyAccessibilityService : AccessibilityService() {
     /** 返回桌面，避免影响后续任务窗口判断。 */
     private fun backToHomeSafe() {
         try {
+            Logger.info("收尾：执行 GLOBAL_ACTION_BACK…")
             performGlobalAction(GLOBAL_ACTION_BACK)
             Thread.sleep(200)
+            Logger.info("收尾：执行 GLOBAL_ACTION_HOME…")
             performGlobalAction(GLOBAL_ACTION_HOME)
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            Logger.error("收尾：返回桌面失败：${t.message}")
         }
     }
 
