@@ -360,9 +360,10 @@ class MyAccessibilityService : AccessibilityService() {
     /**
      * 【点击入口卡片】点击右上角「积分」胶囊 / 积分文字，进入签到页面。
      *
-     * 智能选择策略（避免误匹配"积分商城"等）：
+     * 智能选择策略（精准定位右上角胶囊，排除广告/长文本）：
      * 1. 收集所有 text/desc 包含关键词的节点
-     * 2. 优先级：可点击 > bounds 在右上角 > 文本较短
+     * 2. 评分：可见 + 可点击 + 顶部位置 + 文本短 → 高分
+     *          广告长文本 / 含"新人/享/借" → 大幅扣分
      * 3. 选中后点击（ACTION_CLICK → 手势兜底）
      *
      * @return true 表示成功点击了入口
@@ -382,18 +383,39 @@ class MyAccessibilityService : AccessibilityService() {
             val screenW = dm.widthPixels
             val screenH = dm.heightPixels
 
-            // 按优先级排序：可点击优先 → 右上角优先 → 文本短优先
+            // 广告类关键词：命中则大幅扣分
+            val adWords = listOf("新人", "享", "借", "领券", "福利", "立减", "折扣", "元", "￥")
+
+            // 按优先级评分排序
             val best = candidates.maxByOrNull { node ->
                 val rect = android.graphics.Rect()
                 node.getBoundsInScreen(rect)
-                val clickable = if (findClickableTarget(node) != null) 1000 else 0
-                // 右上角判定：x 中心在右侧 40% 且 y 中心在上侧 35%
-                val inTopRight =
-                    if (rect.exactCenterX() > screenW * 0.4f && rect.exactCenterY() < screenH * 0.35f) 500 else 0
-                // 文本越短越可能是胶囊本身（而非"积分商城"等长文本）
-                val textLen = (node.text?.toString() ?: node.contentDescription?.toString() ?: "").length
-                val shortTextBonus = if (textLen in 1..6) 200 else 0
-                clickable + inTopRight + shortTextBonus
+                val cx = rect.exactCenterX()
+                val cy = rect.exactCenterY()
+                val txt = (node.text?.toString() ?: node.contentDescription?.toString() ?: "")
+
+                var score = 0
+                // 可点击 +1000
+                if (findClickableTarget(node) != null) score += 1000
+
+                // 可见性判定：坐标必须在屏幕范围内（排除滚动到页面外的节点）
+                val visible = cy in 0f..screenH.toFloat() && cx in 0f..screenW.toFloat()
+                if (visible) score += 800 else score -= 1500  // 不可见直接出局
+
+                // 右上角胶囊判定：y 在顶部 25% 且 x 在右侧 30%
+                if (visible && cy < screenH * 0.25f && cx > screenW * 0.7f) score += 700
+                // 顶部判定（不那么靠右也算）
+                else if (visible && cy < screenH * 0.2f) score += 400
+
+                // 文本短加分（胶囊通常 1~6 字，广告文案 10+ 字）
+                val textLen = txt.length
+                if (textLen in 1..6) score += 300
+                else if (textLen > 10) score -= 2000  // 长文本大概率是广告
+
+                // 广告词扣分
+                if (adWords.any { txt.contains(it) }) score -= 3000
+
+                score
             }
 
             if (best != null) {

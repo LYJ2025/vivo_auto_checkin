@@ -60,14 +60,15 @@ object TaskManager {
                 "com.vivo.wallet:id/sign_in",
                 "com.vivo.wallet:id/btn_checkin"
             ),
-            textKeywords = listOf("签到", "立即签到", "领取", "打卡"),
-            descKeywords = listOf("签到", "领取"),
+            // "已签" 用于匹配"已签1天"/"已签2天"等已签到状态按钮（也要点进去）
+            textKeywords = listOf("签到", "立即签到", "领取", "打卡", "已签"),
+            descKeywords = listOf("签到", "领取", "积分"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
             preClickTabs = emptyList(),
             entryKeywords = listOf("我的积分", "积分"),   // 点击右上角积分胶囊
             needsScroll = false
         ),
-        // 任务 B：游戏中心签到（已验证：主页"签到"按钮可直接点击）
+        // 任务 B：游戏中心签到（主页"签到"按钮可直接点击；已签时变"已签n天"）
         CheckinTask(
             name = "游戏中心签到",
             packages = listOf("com.vivo.game"),
@@ -76,15 +77,15 @@ object TaskManager {
                 "com.vivo.game:id/tv_sign",
                 "com.vivo.game:id/checkin_btn"
             ),
-            textKeywords = listOf("签到", "立即签到", "领取", "打卡"),
-            descKeywords = listOf("签到", "领取"),
+            textKeywords = listOf("签到", "立即签到", "领取", "打卡", "已签"),
+            descKeywords = listOf("签到", "领取", "积分"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
             preClickTabs = emptyList(),
             entryKeywords = emptyList(),
             needsScroll = false
         ),
         // 任务 C：应用商店签到
-        //  签到入口：「我的」tab 右上角「积分」胶囊
+        //  签到入口：主页右上角「积分」胶囊（先主页找，找不到再切"我的"）
         CheckinTask(
             name = "应用商店签到",
             packages = listOf(
@@ -98,11 +99,11 @@ object TaskManager {
                 "com.vivo.appstore:id/checkin",
                 "com.vivo.appstore:id/tv_check_in"
             ),
-            textKeywords = listOf("签到", "立即签到", "领取", "打卡", "做任务"),
-            descKeywords = listOf("签到", "领取"),
+            textKeywords = listOf("签到", "立即签到", "领取", "打卡", "做任务", "已签"),
+            descKeywords = listOf("签到", "领取", "积分"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
-            preClickTabs = listOf("我的", "我的福利"),
-            entryKeywords = listOf("我的积分", "积分"),   // 点击右上角积分胶囊
+            preClickTabs = emptyList(),       // 先不切 tab，主页直接找积分入口
+            entryKeywords = listOf("我的积分", "积分"),
             needsScroll = true
         ),
         // 任务 D：vivo 官网签到
@@ -119,11 +120,11 @@ object TaskManager {
                 "com.vivo.website:id/sign_btn",
                 "com.vivo.website:id/tv_sign"
             ),
-            textKeywords = listOf("签到", "登录签到", "立即签到", "领取", "打卡", "做任务", "登录"),
-            descKeywords = listOf("签到", "领取"),
+            textKeywords = listOf("签到", "登录签到", "立即签到", "领取", "打卡", "做任务", "登录", "已签"),
+            descKeywords = listOf("签到", "领取", "积分"),
             skipKeywords = GLOBAL_SKIP_KEYWORDS,
             preClickTabs = listOf("我的", "会员中心", "会员", "个人中心"),
-            entryKeywords = listOf("我的积分", "积分"),   // 点击积分文字位置
+            entryKeywords = listOf("我的积分", "积分"),
             needsScroll = true,
             fallbackUrl = "https://www.vivo.com.cn/"
         )
