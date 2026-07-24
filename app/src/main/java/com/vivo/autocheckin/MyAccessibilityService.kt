@@ -411,14 +411,21 @@ class MyAccessibilityService : AccessibilityService() {
      * @return true 表示成功点击了入口
      */
     private suspend fun clickEntryCard(task: CheckinTask): Boolean {
-        for (keyword in task.entryKeywords) {
+        // 【重试机制】切 tab 后页面可能需要时间渲染，最多重试 3 次
+        for (attempt in 1..3) {
             if (!isRunning) return false
-            val root = rootInActiveWindowSafe() ?: continue
+            for (keyword in task.entryKeywords) {
+                if (!isRunning) return false
+                val root = rootInActiveWindowSafe() ?: continue
 
-            // 收集所有匹配节点
-            val candidates = mutableListOf<AccessibilityNodeInfo>()
-            collectMatchingNodes(root, keyword, candidates)
-            if (candidates.isEmpty()) continue
+                // 收集所有匹配节点
+                val candidates = mutableListOf<AccessibilityNodeInfo>()
+                collectMatchingNodes(root, keyword, candidates)
+                if (candidates.isEmpty()) {
+                    Logger.info("${task.name}：第 $attempt/3 次未找到含「$keyword」的节点。")
+                    continue
+                }
+                Logger.info("${task.name}：第 $attempt/3 次找到含「$keyword」的节点 ${candidates.size} 个。")
 
             // 屏幕尺寸（用于判断右上角）
             val dm = resources.displayMetrics
@@ -522,6 +529,12 @@ class MyAccessibilityService : AccessibilityService() {
                     return true
                 }
                 Logger.error("${task.name}：手势点击也失败 (x=$cx, y=$cy)。")
+                }
+            }
+            // 本轮所有 keyword 都没找到可用入口，等待 800ms 后重试（页面渲染需要时间）
+            if (attempt < 3) {
+                Logger.info("${task.name}：入口未点击成功，等待 800ms 后重试…")
+                delay(800L)
             }
         }
         return false
