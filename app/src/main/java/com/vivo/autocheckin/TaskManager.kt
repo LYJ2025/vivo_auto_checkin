@@ -48,27 +48,9 @@ object TaskManager {
         "下次再说", "不感兴趣", "跳过", "不再提示", "确定", "确认"
     )
 
-    /** 4 个任务按顺序执行。 */
+    /** 4 个任务按顺序执行（用户指定顺序：游戏中心 → vivo 官网 → 应用商店 → 钱包）。 */
     val tasks: List<CheckinTask> = listOf(
-        // 任务 A：vivo 钱包签到
-        //  签到入口：主页右上角「积分」胶囊，点击后进入签到页
-        CheckinTask(
-            name = "钱包签到",
-            packages = listOf("com.vivo.wallet"),
-            viewIds = listOf(
-                "com.vivo.wallet:id/tv_sign",
-                "com.vivo.wallet:id/sign_in",
-                "com.vivo.wallet:id/btn_checkin"
-            ),
-            // "已签" 用于匹配"已签1天"/"已签2天"等已签到状态按钮（也要点进去）
-            textKeywords = listOf("签到", "立即签到", "领取", "打卡", "已签"),
-            descKeywords = listOf("签到", "领取", "积分"),
-            skipKeywords = GLOBAL_SKIP_KEYWORDS,
-            preClickTabs = emptyList(),
-            entryKeywords = listOf("我的积分", "积分"),   // 点击右上角积分胶囊
-            needsScroll = false
-        ),
-        // 任务 B：游戏中心签到（主页"签到"按钮可直接点击；已签时变"已签n天"）
+        // 任务 1：游戏中心签到（主页"签到"按钮可直接点击；已签时变"已签n天"）
         CheckinTask(
             name = "游戏中心签到",
             packages = listOf("com.vivo.game"),
@@ -84,29 +66,7 @@ object TaskManager {
             entryKeywords = emptyList(),
             needsScroll = false
         ),
-        // 任务 C：应用商店签到
-        //  签到入口：主页右上角「积分」胶囊（先主页找，找不到再切"我的"）
-        CheckinTask(
-            name = "应用商店签到",
-            packages = listOf(
-                "com.vivo.appstore",
-                "com.iqoo.appstore",
-                "com.bbk.appstore"
-            ),
-            viewIds = listOf(
-                "com.vivo.appstore:id/sign_btn",
-                "com.vivo.appstore:id/tv_sign",
-                "com.vivo.appstore:id/checkin",
-                "com.vivo.appstore:id/tv_check_in"
-            ),
-            textKeywords = listOf("签到", "立即签到", "领取", "打卡", "做任务", "已签"),
-            descKeywords = listOf("签到", "领取", "积分"),
-            skipKeywords = GLOBAL_SKIP_KEYWORDS,
-            preClickTabs = emptyList(),       // 先不切 tab，主页直接找积分入口
-            entryKeywords = listOf("我的积分", "积分"),
-            needsScroll = true
-        ),
-        // 任务 D：vivo 官网签到
+        // 任务 2：vivo 官网签到
         //  签到入口：「我的」tab 里的「积分」文字位置
         CheckinTask(
             name = "官网登录签到",
@@ -127,6 +87,45 @@ object TaskManager {
             entryKeywords = listOf("我的积分", "积分"),
             needsScroll = true,
             fallbackUrl = "https://www.vivo.com.cn/"
+        ),
+        // 任务 3：应用商店签到
+        //  签到入口：主页右上角「积分」胶囊
+        CheckinTask(
+            name = "应用商店签到",
+            packages = listOf(
+                "com.vivo.appstore",
+                "com.iqoo.appstore",
+                "com.bbk.appstore"
+            ),
+            viewIds = listOf(
+                "com.vivo.appstore:id/sign_btn",
+                "com.vivo.appstore:id/tv_sign",
+                "com.vivo.appstore:id/checkin",
+                "com.vivo.appstore:id/tv_check_in"
+            ),
+            textKeywords = listOf("签到", "立即签到", "领取", "打卡", "做任务", "已签"),
+            descKeywords = listOf("签到", "领取", "积分"),
+            skipKeywords = GLOBAL_SKIP_KEYWORDS,
+            preClickTabs = emptyList(),
+            entryKeywords = listOf("我的积分", "积分"),
+            needsScroll = true
+        ),
+        // 任务 4：vivo 钱包签到
+        //  签到入口：主页右上角「积分」胶囊，点击后进入签到页
+        CheckinTask(
+            name = "钱包签到",
+            packages = listOf("com.vivo.wallet"),
+            viewIds = listOf(
+                "com.vivo.wallet:id/tv_sign",
+                "com.vivo.wallet:id/sign_in",
+                "com.vivo.wallet:id/btn_checkin"
+            ),
+            textKeywords = listOf("签到", "立即签到", "领取", "打卡", "已签"),
+            descKeywords = listOf("签到", "领取", "积分"),
+            skipKeywords = GLOBAL_SKIP_KEYWORDS,
+            preClickTabs = emptyList(),
+            entryKeywords = listOf("我的积分", "积分"),
+            needsScroll = false
         )
     )
 }
