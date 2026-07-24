@@ -387,7 +387,7 @@ class MyAccessibilityService : AccessibilityService() {
             val adWords = listOf("新人", "享", "借", "领券", "福利", "立减", "折扣", "元", "￥")
 
             // 按优先级评分排序
-            val best = candidates.maxByOrNull { node ->
+            val scored = candidates.map { node ->
                 val rect = android.graphics.Rect()
                 node.getBoundsInScreen(rect)
                 val cx = rect.exactCenterX()
@@ -415,22 +415,27 @@ class MyAccessibilityService : AccessibilityService() {
                 // 广告词扣分
                 if (adWords.any { txt.contains(it) }) score -= 3000
 
-                score
+                Triple(node, score, txt)
+            }.filter { it.second >= 200 }  // 低于 200 分直接放弃（避免硬选广告）
+
+            if (scored.isEmpty()) {
+                Logger.info("${task.name}：找到「$keyword」节点但都不符合右上角胶囊特征，跳过入口点击。")
+                continue
             }
 
-            if (best != null) {
-                val target = findClickableTarget(best)
-                if (target != null) {
-                    val rect = android.graphics.Rect()
-                    target.getBoundsInScreen(rect)
-                    val txt = nodeText(best).ifEmpty { keyword }
-                    Logger.info("${task.name}：点击积分入口「$txt」(x=${rect.exactCenterX().toInt()},y=${rect.exactCenterY().toInt()})…")
-                    if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                        return true
-                    }
-                    // ACTION_CLICK 失败则手势兜底
-                    if (gestureClick(rect.exactCenterX(), rect.exactCenterY())) return true
+            val best = scored.maxBy { it.second }
+            val bestNode = best.first
+            val bestScore = best.second
+            val bestTxt = best.third
+            val target = findClickableTarget(bestNode)
+            if (target != null) {
+                val rect = android.graphics.Rect()
+                target.getBoundsInScreen(rect)
+                Logger.info("${task.name}：点击积分入口「$bestTxt」(score=$bestScore,x=${rect.exactCenterX().toInt()},y=${rect.exactCenterY().toInt()})…")
+                if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    return true
                 }
+                if (gestureClick(rect.exactCenterX(), rect.exactCenterY())) return true
             }
         }
         return false
