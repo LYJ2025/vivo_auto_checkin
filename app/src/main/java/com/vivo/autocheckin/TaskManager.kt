@@ -104,16 +104,18 @@ object TaskManager {
             needsScroll = true
         ),
         // 任务 D：vivo 官网 / 账号签到
-        //  - com.bbk.account 无 launcher Activity，改用 com.vivo.website 优先
-        //  - 增加 vivo.cn 网页兜底（启动浏览器打开官网签到页）
+        //  - 真实包名为 com.vivo.space（vivo 官网 App）
+        //  - com.vivo.website 为旧版本兜底
+        //  - 全部失败时用浏览器打开 vivo 官网
         CheckinTask(
             name = "官网登录签到",
             packages = listOf(
-                "com.vivo.website",
-                "com.vivo.browser",                 // vivo 浏览器打开 vivo.cn
-                "com.android.browser"               // 系统浏览器兜底
+                "com.vivo.space",                    // vivo 官网正确包名
+                "com.vivo.website"                   // 旧版本兜底
             ),
             viewIds = listOf(
+                "com.vivo.space:id/sign_btn",
+                "com.vivo.space:id/tv_sign",
                 "com.vivo.website:id/sign_btn",
                 "com.vivo.website:id/tv_sign"
             ),
