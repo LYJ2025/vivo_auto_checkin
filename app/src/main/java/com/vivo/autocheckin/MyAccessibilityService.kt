@@ -251,6 +251,8 @@ class MyAccessibilityService : AccessibilityService() {
                 }
             } else {
                 Logger.info("${task.name}：未找到签到入口卡片，尝试直接查找签到按钮…")
+                // 【诊断】dump 当前页所有可见文本节点，便于排查应用商店等找不到入口的问题
+                dumpVisibleTextNodes(task.name)
             }
         }
 
@@ -740,6 +742,54 @@ class MyAccessibilityService : AccessibilityService() {
             Logger.warn("过滤：节点「$txt」(x=${cx.toInt()}, y=${cy.toInt()}) 不在屏幕内，跳过。")
         }
         return onScreen
+    }
+
+    /**
+     * 【诊断】dump 当前页所有可见文本节点（text 非空且在屏幕内）。
+     * 用于排查找不到签到入口的应用商店等场景，看清页面到底有哪些可点击元素。
+     */
+    private fun dumpVisibleTextNodes(taskName: String) {
+        val root = rootInActiveWindowSafe() ?: return
+        val dm = resources.displayMetrics
+        val screenW = dm.widthPixels
+        val screenH = dm.heightPixels
+        val nodes = mutableListOf<AccessibilityNodeInfo>()
+        collectVisibleTextNodes(root, screenW, screenH, nodes)
+        Logger.info("【页面诊断】$taskName 当前页可见文本节点共 ${nodes.size} 个：")
+        nodes.sortedBy { node ->
+            val r = android.graphics.Rect()
+            node.getBoundsInScreen(r)
+            r.exactCenterY()
+        }.forEach { node ->
+            val r = android.graphics.Rect()
+            node.getBoundsInScreen(r)
+            val txt = nodeText(node).replace("\n", " ").take(30)
+            val clickable = node.isClickable || findClickableAncestor(node) != null
+            Logger.info("  ·「$txt」(x=${r.exactCenterX().toInt()}, y=${r.exactCenterY().toInt()}, clickable=$clickable)")
+        }
+    }
+
+    /** 递归收集所有 text/desc 非空且在屏幕内的节点。 */
+    private fun collectVisibleTextNodes(
+        node: AccessibilityNodeInfo,
+        screenW: Int,
+        screenH: Int,
+        out: MutableList<AccessibilityNodeInfo>
+    ) {
+        val txt = nodeText(node)
+        if (txt.isNotEmpty()) {
+            val r = android.graphics.Rect()
+            node.getBoundsInScreen(r)
+            val cx = r.exactCenterX()
+            val cy = r.exactCenterY()
+            if (cx in 0f..screenW.toFloat() && cy in 0f..screenH.toFloat()) {
+                out.add(node)
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectVisibleTextNodes(child, screenW, screenH, out)
+        }
     }
 
     /** 递归查找 text 命中关键词且可点击的节点。 */
